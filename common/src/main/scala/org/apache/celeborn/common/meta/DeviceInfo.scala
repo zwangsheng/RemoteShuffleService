@@ -145,7 +145,7 @@ object DeviceInfo {
 
   /**
    * @param workingDirs array of (workingDir, max usable space, flush thread count, storage type)
-   * @return it will return three maps
+   * @return it will return two maps
    *         (deviceName -> deviceInfo)
    *         (mount point -> diskInfo)
    */

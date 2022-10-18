@@ -26,7 +26,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.IntUnaryOperator
 
 import scala.collection.JavaConverters._
-import scala.concurrent.duration._
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.hadoop.conf.Configuration
@@ -121,7 +120,7 @@ final private[worker] class StorageManager(conf: RssConf, workerSource: Abstract
   val hdfsPermission = FsPermission.createImmutable(755)
   val hdfsWriters = new util.ArrayList[FileWriter]()
   val hdfsFlusher =
-    if (!hdfsDir.isEmpty) {
+    if (hdfsDir.nonEmpty) {
       val hdfsConfiguration = new Configuration
       hdfsConfiguration.set("fs.defaultFS", hdfsDir)
       hdfsConfiguration.set("dfs.replication", "2")
@@ -374,7 +373,7 @@ final private[worker] class StorageManager(conf: RssConf, workerSource: Abstract
     }
   }
 
-  private val noneEmptyDirExpireDurationMs = RssConf.appExpireDurationMs(conf)
+  private val noneEmptyDirExpireDurationMs = RssConf.workerStorageExpireDurationMs(conf)
   private val storageScheduler =
     ThreadUtils.newDaemonSingleThreadScheduledExecutor("storage-scheduler")
 
@@ -464,9 +463,9 @@ final private[worker] class StorageManager(conf: RssConf, workerSource: Abstract
 
   private def checkIfWorkingDirCleaned: Boolean = {
     var retryTimes = 0
-    val awaitTimeout = RssConf.checkFileCleanTimeoutMs(conf)
+    val retryIntervalMs = RssConf.cleanResidualFileIntervalMs(conf)
     val appIds = shuffleKeySet().asScala.map(key => Utils.splitShuffleKey(key)._1)
-    while (retryTimes < RssConf.checkFileCleanRetryTimes(conf)) {
+    while (retryTimes < RssConf.cleanResidualFileRetryTime(conf)) {
       val localCleaned =
         !disksSnapshot().filter(_.status != DiskStatus.IO_HANG).exists { diskInfo =>
           diskInfo.dirs.exists {
@@ -495,11 +494,11 @@ final private[worker] class StorageManager(conf: RssConf, workerSource: Abstract
         return true
       }
       retryTimes += 1
-      if (retryTimes < RssConf.checkFileCleanRetryTimes(conf)) {
+      if (retryTimes < RssConf.cleanResidualFileRetryTime(conf)) {
         logInfo(s"Working directory's files have not been cleaned up completely, " +
-          s"will start ${retryTimes + 1}th attempt after ${awaitTimeout} milliseconds.")
+          s"will start ${retryTimes + 1}th attempt after ${retryIntervalMs} milliseconds.")
       }
-      Thread.sleep(awaitTimeout)
+      Thread.sleep(retryIntervalMs)
     }
     false
   }
@@ -516,14 +515,6 @@ final private[worker] class StorageManager(conf: RssConf, workerSource: Abstract
     }
     if (null != diskOperators) {
       cleanupExpiredShuffleKey(shuffleKeySet())
-      ThreadUtils.parmap(
-        diskOperators.asScala.toMap,
-        "ShutdownDiskOperators",
-        diskOperators.size()) { entry =>
-        ThreadUtils.shutdown(
-          entry._2,
-          RssConf.workerDiskFlusherShutdownTimeoutMs(conf).milliseconds)
-      }
     }
     storageScheduler.shutdownNow()
     if (null != deviceMonitor) {

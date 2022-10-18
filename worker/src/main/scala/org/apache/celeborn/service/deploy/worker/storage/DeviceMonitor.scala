@@ -57,9 +57,7 @@ class LocalDeviceMonitor(
 
   class ObservedDevice(val deviceInfo: DeviceInfo) {
     val diskInfos = new ConcurrentHashMap[String, DiskInfo]()
-    deviceInfo.diskInfos.foreach { case diskInfo =>
-      diskInfos.put(diskInfo.mountPoint, diskInfo)
-    }
+    deviceInfo.diskInfos.foreach(diskInfo => diskInfos.put(diskInfo.mountPoint, diskInfo))
     val observers: jSet[DeviceObserver] = ConcurrentHashMap.newKeySet[DeviceObserver]()
 
     val sysBlockDir = RssConf.sysBlockDir(rssConf)
@@ -81,16 +79,14 @@ class LocalDeviceMonitor(
 
     def notifyObserversOnError(mountPoints: List[String], diskStatus: DiskStatus): Unit =
       this.synchronized {
-        mountPoints.foreach { case mountPoint =>
-          diskInfos.get(mountPoint).setStatus(diskStatus)
-        }
+        mountPoints.foreach(mountPoint =>
+          diskInfos.get(mountPoint).setStatus(diskStatus))
         // observer.notifyDeviceError might remove itself from observers,
         // so we need to use tmpObservers
         val tmpObservers = new util.HashSet[DeviceObserver](observers)
         tmpObservers.asScala.foreach(ob => {
-          mountPoints.foreach { case mountPoint =>
-            ob.notifyError(mountPoint, diskStatus)
-          }
+          mountPoints.foreach(mountPoint =>
+            ob.notifyError(mountPoint, diskStatus))
         })
       }
 
@@ -218,7 +214,7 @@ class LocalDeviceMonitor(
                   s"${device.deviceInfo.name}, notify observers")
                 device.notifyObserversOnError(mountPoints, DiskStatus.IO_HANG)
               } else {
-                device.diskInfos.values().asScala.foreach { case diskInfo =>
+                device.diskInfos.values().asScala.foreach { diskInfo =>
                   if (checkDiskUsage && DeviceMonitor.highDiskUsage(rssConf, diskInfo.mountPoint)) {
                     logger.error(s"${diskInfo.mountPoint} high_disk_usage error, notify observers")
                     device.notifyObserversOnHighDiskUsage(diskInfo.mountPoint)
@@ -321,7 +317,7 @@ object DeviceMonitor {
       val freeSpace = usage(usage.length - 3)
       val used_percent = usage(usage.length - 2)
 
-      val status = freeSpace.toLong < RssConf.diskMinimumReserveSize(rssConf) / 1024 / 1024 / 1024
+      val status = freeSpace.toLong < (RssConf.diskMinimumReserveSize(rssConf) >> 30)
       if (status) {
         logger.warn(s"$diskRootPath usage:{total:$totalSpace GB," +
           s" free:$freeSpace GB, used_percent:$used_percent}")
@@ -329,7 +325,7 @@ object DeviceMonitor {
       status
     })(false)(
       deviceCheckThreadPool,
-      RssConf.workerStatusCheckTimeout(rssConf),
+      RssConf.workerStatusCheckTimeoutSeconds(rssConf),
       s"Disk: $diskRootPath Usage Check Timeout")
   }
 
@@ -374,7 +370,7 @@ object DeviceMonitor {
       }
     })(false)(
       deviceCheckThreadPool,
-      RssConf.workerStatusCheckTimeout(rssConf),
+      RssConf.workerStatusCheckTimeoutSeconds(rssConf),
       s"Disk: $dataDir Read_Write Check Timeout")
   }
 
