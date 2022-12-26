@@ -57,7 +57,7 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
 
   private def loadFromMap(props: Map[String, String], silent: Boolean): Unit =
     settings.synchronized {
-      // Load any rss.* system properties
+      // Load any celeborn.* or rss.* system properties
       for ((key, value) <- props if key.startsWith("celeborn.") || key.startsWith("rss.")) {
         set(key, value, silent)
       }
@@ -520,7 +520,7 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   def shuffleManagerPort: Int = get(SHUFFLE_MANAGER_PORT)
   def shuffleChunkSize: Long = get(SHUFFLE_CHUCK_SIZE)
   def registerShuffleMaxRetry: Int = get(SHUFFLE_REGISTER_MAX_RETRIES)
-  def registerShuffleRetryWait: Long = get(SHUFFLE_REGISTER_RETRY_WAIT)
+  def registerShuffleRetryWaitMs: Long = get(SHUFFLE_REGISTER_RETRY_WAIT)
   def reserveSlotsMaxRetries: Int = get(RESERVE_SLOTS_MAX_RETRIES)
   def reserveSlotsRetryWait: Long = get(RESERVE_SLOTS_RETRY_WAIT)
   def rpcMaxParallelism: Int = get(CLIENT_RPC_MAX_PARALLELISM)
@@ -556,6 +556,7 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   // //////////////////////////////////////////////////////
   def testFetchFailure: Boolean = get(TEST_FETCH_FAILURE)
   def testRetryCommitFiles: Boolean = get(TEST_RETRY_COMMIT_FILE)
+  def testPushDataTimeout: Boolean = get(TEST_PUSHDATA_TIMEOUT)
 
   def masterHost: String = get(MASTER_HOST)
 
@@ -679,7 +680,7 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   def rpcCacheSize: Int = get(RPC_CACHE_SIZE)
   def rpcCacheConcurrencyLevel: Int = get(RPC_CACHE_CONCURRENCY_LEVEL)
   def rpcCacheExpireTime: Long = get(RPC_CACHE_EXPIRE_TIME)
-  def pushDataRpcTimeoutMs = get(PUSH_DATA_RPC_TIMEOUT)
+  def pushDataTimeoutMs = get(PUSH_DATA_TIMEOUT)
 
   def registerShuffleRpcAskTimeout: RpcTimeout =
     new RpcTimeout(
@@ -724,6 +725,9 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   def diskMonitorCheckList: Seq[String] = get(WORKER_DISK_MONITOR_CHECKLIST)
   def diskMonitorCheckInterval: Long = get(WORKER_DISK_MONITOR_CHECK_INTERVAL)
   def diskMonitorSysBlockDir: String = get(WORKER_DISK_MONITOR_SYS_BLOCK_DIR)
+  def diskMonitorNotifyErrorThreshold: Int = get(WORKER_DISK_MONITOR_NOTIFY_ERROR_THRESHOLD)
+  def diskMonitorNotifyErrorExpireTimeout: Long =
+    get(WORKER_DISK_MONITOR_NOTIFY_ERROR_EXPIRE_TIMEOUT)
   def createWriterMaxAttempts: Int = get(WORKER_WRITER_CREATE_MAX_ATTEMPTS)
   def workerStorageBaseDirPrefix: String = get(WORKER_STORAGE_BASE_DIR_PREFIX)
   def workerStorageBaseDirNumber: Int = get(WORKER_STORAGE_BASE_DIR_COUNT)
@@ -789,9 +793,7 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
     }
   }
 
-  def partitionSplitMinimumSize: Long = {
-    getSizeAsBytes("rss.partition.split.minimum.size", "1m")
-  }
+  def partitionSplitMinimumSize: Long = get(PARTITION_SPLIT_MIN)
 
   def hdfsDir: String = {
     get(HDFS_DIR).map {
@@ -2136,6 +2138,15 @@ object CelebornConf extends Logging {
       .checkValues(Set(PartitionSplitMode.SOFT.name, PartitionSplitMode.HARD.name))
       .createWithDefault(PartitionSplitMode.SOFT.name)
 
+  val PARTITION_SPLIT_MIN: ConfigEntry[Long] =
+    buildConf("celeborn.shuffle.partitionSplit.min")
+      .withAlternative("rss.partition.split.minimum.size")
+      .categories("worker")
+      .doc("Min size for a partition to split")
+      .version("0.2.0")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefaultString("1m")
+
   val BATCH_HANDLE_CHANGE_PARTITION_ENABLED: ConfigEntry[Boolean] =
     buildConf("celeborn.shuffle.batchHandleChangePartition.enabled")
       .withAlternative("rss.change.partition.batch.enabled")
@@ -2189,14 +2200,22 @@ object CelebornConf extends Logging {
       .timeConf(TimeUnit.MILLISECONDS)
       .createWithDefaultString("5s")
 
-  val PUSH_DATA_RPC_TIMEOUT: ConfigEntry[Long] =
-    buildConf("celeborn.push.data.rpc.timeout")
+  val PUSH_DATA_TIMEOUT: ConfigEntry[Long] =
+    buildConf("celeborn.push.data.timeout")
       .withAlternative("rss.push.data.rpc.timeout")
       .categories("client")
       .version("0.2.0")
       .doc("Timeout for a task to push data rpc message.")
       .timeConf(TimeUnit.MILLISECONDS)
       .createWithDefaultString("120s")
+
+  val TEST_PUSHDATA_TIMEOUT: ConfigEntry[Boolean] =
+    buildConf("celeborn.test.pushdataTimeout")
+      .categories("worker")
+      .version("0.2.0")
+      .doc("Wheter to test pushdata timeout")
+      .booleanConf
+      .createWithDefault(false)
 
   val REGISTER_SHUFFLE_RPC_ASK_TIMEOUT: OptionalConfigEntry[Long] =
     buildConf("celeborn.rpc.registerShuffle.askTimeout")
@@ -2444,6 +2463,24 @@ object CelebornConf extends Logging {
       .doc("The directory where linux file block information is stored.")
       .stringConf
       .createWithDefault("/sys/block")
+
+  val WORKER_DISK_MONITOR_NOTIFY_ERROR_THRESHOLD: ConfigEntry[Int] =
+    buildConf("celeborn.worker.monitor.disk.notifyError.threshold")
+      .categories("worker")
+      .version("0.3.0")
+      .doc("Device monitor will only notify critical error once the accumulated valid non-critical error number " +
+        "exceeding this threshold.")
+      .intConf
+      .createWithDefault(64)
+
+  val WORKER_DISK_MONITOR_NOTIFY_ERROR_EXPIRE_TIMEOUT: ConfigEntry[Long] =
+    buildConf("celeborn.worker.monitor.disk.notifyError.expireTimeout")
+      .categories("worker")
+      .version("0.3.0")
+      .doc("The expire timeout of non-critical device error. Only notify critical error when the number of non-critical " +
+        "errors for a period of time exceeds threshold.")
+      .timeConf(TimeUnit.MILLISECONDS)
+      .createWithDefaultString("10m")
 
   val WORKER_WRITER_CREATE_MAX_ATTEMPTS: ConfigEntry[Int] =
     buildConf("celeborn.worker.writer.create.maxAttempts")

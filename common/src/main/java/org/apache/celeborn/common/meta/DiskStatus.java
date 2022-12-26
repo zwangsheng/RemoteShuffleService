@@ -34,4 +34,17 @@ public enum DiskStatus {
   public final byte getValue() {
     return value;
   }
+
+  public final String toMetric() {
+    String[] fragments = this.name().split("_");
+    String metric = "";
+    for (String fragment : fragments) {
+      int len = fragment.length();
+      if (len >= 1) {
+        metric += fragment.substring(0, 1).toUpperCase();
+        metric += fragment.substring(1, len).toLowerCase();
+      }
+    }
+    return metric;
+  }
 }

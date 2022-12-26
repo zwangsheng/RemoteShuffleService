@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicIntegerArray}
 import com.google.common.base.Throwables
 import io.netty.buffer.ByteBuf
 
+import org.apache.celeborn.common.CelebornConf
 import org.apache.celeborn.common.exception.AlreadyClosedException
 import org.apache.celeborn.common.internal.Logging
 import org.apache.celeborn.common.meta.{PartitionLocationInfo, WorkerInfo}
@@ -37,7 +38,7 @@ import org.apache.celeborn.common.protocol.{PartitionLocation, PartitionSplitMod
 import org.apache.celeborn.common.protocol.message.StatusCode
 import org.apache.celeborn.common.unsafe.Platform
 import org.apache.celeborn.common.util.PackedPartitionId
-import org.apache.celeborn.service.deploy.worker.storage.{FileWriter, LocalFlusher, MapPartitionFileWriter, StorageManager}
+import org.apache.celeborn.service.deploy.worker.storage.{FileWriter, HdfsFlusher, LocalFlusher, MapPartitionFileWriter, StorageManager}
 
 class PushDataHandler extends BaseMessageHandler with Logging {
 
@@ -55,6 +56,8 @@ class PushDataHandler extends BaseMessageHandler with Logging {
   var partitionSplitMinimumSize: Long = _
   var shutdown: AtomicBoolean = _
   var storageManager: StorageManager = _
+  var conf: CelebornConf = _
+  @volatile var pushDataTimeoutTested = false
 
   def init(worker: Worker): Unit = {
     workerSource = worker.workerSource
@@ -71,6 +74,7 @@ class PushDataHandler extends BaseMessageHandler with Logging {
     partitionSplitMinimumSize = worker.conf.partitionSplitMinimumSize
     storageManager = worker.storageManager
     shutdown = worker.shutdown
+    conf = worker.conf
 
     logInfo(s"diskReserveSize $diskReserveSize")
   }
@@ -121,6 +125,12 @@ class PushDataHandler extends BaseMessageHandler with Logging {
     val mode = PartitionLocation.getMode(pushData.mode)
     val body = pushData.body.asInstanceOf[NettyManagedBuffer].getBuf
     val isMaster = mode == PartitionLocation.Mode.MASTER
+
+    // For test
+    if (conf.testPushDataTimeout && !pushDataTimeoutTested) {
+      pushDataTimeoutTested = true
+      return
+    }
 
     val key = s"${pushData.requestId}"
     if (isMaster) {
@@ -224,9 +234,14 @@ class PushDataHandler extends BaseMessageHandler with Logging {
       callback.onFailure(new Exception(message, exception))
       return
     }
-    val diskFull = workerInfo.diskInfos
-      .get(fileWriter.flusher.asInstanceOf[LocalFlusher].mountPoint)
-      .actualUsableSpace < diskReserveSize
+    val diskFull =
+      if (fileWriter.flusher.isInstanceOf[LocalFlusher]) {
+        workerInfo.diskInfos
+          .get(fileWriter.flusher.asInstanceOf[LocalFlusher].mountPoint)
+          .actualUsableSpace < diskReserveSize
+      } else {
+        false
+      }
     if ((diskFull && fileWriter.getFileInfo.getFileLength > partitionSplitMinimumSize) ||
       (isMaster && fileWriter.getFileInfo.getFileLength > fileWriter.getSplitThreshold())) {
       if (fileWriter.getSplitMode == PartitionSplitMode.SOFT) {
@@ -308,6 +323,12 @@ class PushDataHandler extends BaseMessageHandler with Logging {
       workerSource.startTimer(WorkerSource.MasterPushDataTime, key)
     } else {
       workerSource.startTimer(WorkerSource.SlavePushDataTime, key)
+    }
+
+    // For test
+    if (conf.testPushDataTimeout && !PushDataHandler.pushDataTimeoutTested) {
+      PushDataHandler.pushDataTimeoutTested = true
+      return
     }
 
     val wrappedCallback = new RpcResponseCallback() {
@@ -859,6 +880,9 @@ class PushDataHandler extends BaseMessageHandler with Logging {
   }
 
   private def checkDiskFull(fileWriter: FileWriter): Boolean = {
+    if (fileWriter.flusher.isInstanceOf[HdfsFlusher]) {
+      return false
+    }
     val diskFull = workerInfo.diskInfos
       .get(fileWriter.flusher.asInstanceOf[LocalFlusher].mountPoint)
       .actualUsableSpace < diskReserveSize
@@ -888,4 +912,8 @@ class PushDataHandler extends BaseMessageHandler with Logging {
     val id = partitionUniqueId.split("-")(0).toInt
     (PackedPartitionId.getRawPartitionId(id), PackedPartitionId.getAttemptId(id))
   }
+}
+
+object PushDataHandler {
+  @volatile var pushDataTimeoutTested = false
 }
