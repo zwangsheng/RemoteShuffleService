@@ -57,8 +57,10 @@ public class SparkShuffleManager implements ShuffleManager {
   private static final String SORT_SHUFFLE_MANAGER_NAME =
       "org.apache.spark.shuffle.sort.SortShuffleManager";
 
+  // 用于判断在 shuffle write/read 的时候能否采用 columnar 方式
   private static final boolean COLUMNAR_SHUFFLE_CLASSES_PRESENT;
 
+  // 尝试加载 columnar 相关类
   static {
     boolean present;
     try {
@@ -75,14 +77,21 @@ public class SparkShuffleManager implements ShuffleManager {
   private final Boolean isDriver;
   private final CelebornConf celebornConf;
   private final int cores;
+
   // either be "{appId}_{appAttemptId}" or "{appId}"
   private String appUniqueId;
 
   private LifecycleManager lifecycleManager;
+
+  // 进程单例，
   private ShuffleClient shuffleClient;
   private volatile SortShuffleManager _sortShuffleManager;
+
+  // 用于记录 fallback 到 SortShuffleManager 的 shuffleId
   private final ConcurrentHashMap.KeySetView<Integer, Boolean> sortShuffleIds =
       ConcurrentHashMap.newKeySet();
+
+  // 判断 fallback 的工具类
   private final CelebornShuffleFallbackPolicyRunner fallbackPolicyRunner;
 
   private final ExecutorService[] asyncPushers;
@@ -105,6 +114,7 @@ public class SparkShuffleManager implements ShuffleManager {
     this.celebornConf = SparkUtils.fromSparkConf(conf);
     this.cores = executorCores(conf);
     this.fallbackPolicyRunner = new CelebornShuffleFallbackPolicyRunner(celebornConf);
+    // 在 Sort Mode 情况下，准备 pipeline 相关 async push threads pool
     if (ShuffleMode.SORT.equals(celebornConf.shuffleWriterMode())
         && celebornConf.clientPushSortPipelineEnabled()) {
       asyncPushers = new ExecutorService[cores];

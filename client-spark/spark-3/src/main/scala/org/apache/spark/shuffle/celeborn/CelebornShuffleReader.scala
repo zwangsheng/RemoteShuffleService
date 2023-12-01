@@ -77,6 +77,7 @@ class CelebornShuffleReader[K, C](
         metrics.incFetchWaitTime(time)
     }
 
+    // 创建单例的
     if (streamCreatorPool == null) {
       CelebornShuffleReader.synchronized {
         if (streamCreatorPool == null) {
@@ -150,6 +151,7 @@ class CelebornShuffleReader[K, C](
         (partitionId, CelebornInputStream.empty())
       }
     }).map { case (partitionId, inputStream) =>
+      // 读取并反序列化数据
       (partitionId, serializerInstance.deserializeStream(inputStream).asKeyValueIterator)
     }.flatMap { case (partitionId, iter) =>
       try {
