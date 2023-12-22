@@ -101,6 +101,13 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
 
   private val excludedWorkersFilter = conf.registerShuffleFilterExcludedWorkerEnabled
 
+  // Using cache here to avoid memory leak when shuffle client shutdown without un-register
+  private val shuffleClientTopology = CacheBuilder.newBuilder()
+    .concurrencyLevel(rpcCacheConcurrencyLevel)
+    .expireAfterAccess(rpcCacheExpireTime, TimeUnit.MILLISECONDS)
+    .maximumSize(rpcCacheSize)
+    .build[String, Set[String]]
+
   private val registerShuffleResponseRpcCache: Cache[Int, ByteBuffer] = CacheBuilder.newBuilder()
     .concurrencyLevel(rpcCacheConcurrencyLevel)
     .expireAfterAccess(rpcCacheExpireTime, TimeUnit.MILLISECONDS)
@@ -234,6 +241,16 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
     case StageEnd(shuffleId) =>
       logInfo(s"Received StageEnd request, shuffleId $shuffleId.")
       handleStageEnd(shuffleId)
+    case pb: PbRegisterShuffleClient =>
+      val topology = pb.getTopology
+      val bindAddress = pb.getBindAddress
+      logInfo(s"Received RegisterShuffleClient request from($topology, $bindAddress)")
+      handleShuffleClientRegister(topology, bindAddress)
+    case pb: PbUnRegisterShuffleClient =>
+      val topology = pb.getTopology
+      val bindAddress = pb.getBindAddress
+      logInfo(s"Received UnRegisterShuffleClient request from($topology, $bindAddress)")
+      handleShuffleClientUnRegister(pb.getTopology, pb.getBindAddress)
   }
 
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
@@ -344,6 +361,24 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
       val shuffleId = pb.getShuffleId
       logDebug(s"Received ReportShuffleFetchFailure request, appShuffleId $appShuffleId shuffleId $shuffleId")
       handleReportShuffleFetchFailure(context, appShuffleId, shuffleId)
+
+    case GetPartitionLocation(shuffleId: Int, partitionId: Int) =>
+      logDebug(
+        s"Received GetPartitionLocation request for shuffleId $shuffleId partitionId $partitionId.")
+      context.reply(GetPartitionLocationResponse(
+        StatusCode.SUCCESS,
+        computeTopology(handleGetPartitionLocation(shuffleId, partitionId))))
+  }
+
+  private def computeTopology(locs: Seq[String]): Seq[String] = {
+    val preferLocs = locs.flatMap { loc =>
+      shuffleClientTopology.getIfPresent(loc) match {
+        case set: Set[String] => set.toSeq
+        case null => Seq.empty
+      }
+    }
+    // avoid scheduler always schedule to the same node
+    Random.shuffle(preferLocs).distinct
   }
 
   def setupEndpoints(
@@ -691,6 +726,21 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
     context.reply(MapperEndResponse(StatusCode.SUCCESS))
   }
 
+  private def handleShuffleClientRegister(topology: String, bindAddress: String): Unit = {
+    val topologyList = shuffleClientTopology.getIfPresent(topology)
+    if (topologyList == null) {
+      shuffleClientTopology.put(topology, Set(bindAddress))
+    } else {
+      shuffleClientTopology.put(topology, topologyList + bindAddress)
+    }
+  }
+  private def handleShuffleClientUnRegister(topology: String, bindAddress: String): Unit = {
+    val topologyList = shuffleClientTopology.getIfPresent(topology)
+    if (topologyList == null) {} else {
+      shuffleClientTopology.put(topology, topologyList.filterNot(_ == bindAddress))
+    }
+  }
+
   private def handleGetReducerFileGroup(
       context: RpcCallContext,
       shuffleId: Int): Unit = {
@@ -830,6 +880,18 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
     val pbReportShuffleFetchFailureResponse =
       PbReportShuffleFetchFailureResponse.newBuilder().setSuccess(ret).build()
     context.reply(pbReportShuffleFetchFailureResponse)
+  }
+
+  private def handleGetPartitionLocation(
+      shuffleId: Int,
+      partitionId: Int): Seq[String] = {
+    if (!registeredShuffle.contains(shuffleId)) {
+      logWarning(s"[handleGetPartitionLocation] shuffle $shuffleId not registered, " +
+        s"maybe no shuffle data within this stage.")
+      Seq.empty
+    } else {
+      commitManager.handleGetPartitionLocation(shuffleId, partitionId)
+    }
   }
 
   private def handleStageEnd(shuffleId: Int): Unit = {

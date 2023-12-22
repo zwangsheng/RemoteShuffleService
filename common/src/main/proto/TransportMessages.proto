@@ -92,6 +92,8 @@ enum MessageType {
   GET_SHUFFLE_ID = 69;
   GET_SHUFFLE_ID_RESPONSE = 70;
   SASL_REQUEST = 71;
+  REGISTER_SHUFFLE_CLIENT = 72;
+  UNREGISTER_SHUFFLE_CLIENT = 73;
 }
 
 enum StreamType {
@@ -123,6 +125,7 @@ message PbPartitionLocation {
   PbPartitionLocation peer = 9;
   PbStorageInfo storageInfo = 10;
   bytes mapIdBitmap = 11;
+  string topology = 12;
 }
 
 message PbWorkerResource {
@@ -149,6 +152,7 @@ message PbWorkerInfo {
   int32 replicatePort = 5;
   repeated PbDiskInfo disks = 6;
   map<string, PbResourceConsumption> userResourceConsumption = 7;
+  string topology = 8;
 }
 
 message PbFileGroup {
@@ -164,6 +168,7 @@ message PbRegisterWorker {
   repeated PbDiskInfo disks = 6;
   string requestId = 9;
   map<string, PbResourceConsumption> userResourceConsumption = 8;
+  string topology = 10;
 }
 
 message PbHeartbeatFromWorker {
@@ -197,6 +202,16 @@ message PbRegisterMapPartitionTask {
   int32 mapId = 3;
   int32 attemptId = 4;
   int32 partitionId = 5;
+}
+
+message PbRegisterShuffleClient {
+  string topology = 1;
+  string bindAddress = 2;
+}
+
+message PbUnRegisterShuffleClient {
+  string topology = 1;
+  string bindAddress = 2;
 }
 
 message PbRegisterShuffleResponse {

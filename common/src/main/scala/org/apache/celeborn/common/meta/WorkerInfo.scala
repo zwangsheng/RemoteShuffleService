@@ -37,7 +37,8 @@ class WorkerInfo(
     val fetchPort: Int,
     val replicatePort: Int,
     _diskInfos: util.Map[String, DiskInfo],
-    _userResourceConsumption: util.Map[UserIdentifier, ResourceConsumption]) extends Serializable
+    _userResourceConsumption: util.Map[UserIdentifier, ResourceConsumption],
+    val topology: String) extends Serializable
   with Logging {
   var networkLocation = "/default-rack"
   var lastHeartbeat: Long = 0
@@ -49,7 +50,32 @@ class WorkerInfo(
     else null
   var endpoint: RpcEndpointRef = null
 
-  def this(host: String, rpcPort: Int, pushPort: Int, fetchPort: Int, replicatePort: Int) {
+  def this(
+      host: String,
+      rpcPort: Int,
+      pushPort: Int,
+      fetchPort: Int,
+      replicatePort: Int,
+      _diskInfos: util.Map[String, DiskInfo],
+      _userResourceConsumption: util.Map[UserIdentifier, ResourceConsumption]) = {
+    this(
+      host,
+      rpcPort,
+      pushPort,
+      fetchPort,
+      replicatePort,
+      _diskInfos,
+      _userResourceConsumption,
+      host)
+  }
+
+  def this(
+      host: String,
+      rpcPort: Int,
+      pushPort: Int,
+      fetchPort: Int,
+      replicatePort: Int,
+      topology: String) {
     this(
       host,
       rpcPort,
@@ -57,7 +83,12 @@ class WorkerInfo(
       fetchPort,
       replicatePort,
       new util.HashMap[String, DiskInfo](),
-      new util.HashMap[UserIdentifier, ResourceConsumption]())
+      new util.HashMap[UserIdentifier, ResourceConsumption](),
+      topology)
+  }
+
+  def this(host: String, rpcPort: Int, pushPort: Int, fetchPort: Int, replicatePort: Int) = {
+    this(host: String, rpcPort: Int, pushPort: Int, fetchPort: Int, replicatePort: Int, host)
   }
 
   def isActive: Boolean = {
@@ -119,11 +150,12 @@ class WorkerInfo(
 
   def readableAddress(): String = {
     s"Host:$host:RpcPort:$rpcPort:PushPort:$pushPort:" +
-      s"FetchPort:$fetchPort:ReplicatePort:$replicatePort"
+      s"FetchPort:$fetchPort:ReplicatePort:$replicatePort" +
+      s"Topology:$topology"
   }
 
   def toUniqueId(): String = {
-    s"$host:$rpcPort:$pushPort:$fetchPort:$replicatePort"
+    s"$host:$rpcPort:$pushPort:$fetchPort:$replicatePort:$topology"
   }
 
   def slotAvailable(): Boolean = this.synchronized {
@@ -222,6 +254,7 @@ class WorkerInfo(
        |""".stripMargin
   }
 
+  // ignore topology compare here, host and port enough
   override def equals(other: Any): Boolean = other match {
     case that: WorkerInfo =>
       host == that.host &&
@@ -250,7 +283,13 @@ class WorkerInfo(
 object WorkerInfo {
 
   def fromUniqueId(id: String): WorkerInfo = {
-    val Array(host, rpcPort, pushPort, fetchPort, replicatePort) = id.split(":")
-    new WorkerInfo(host, rpcPort.toInt, pushPort.toInt, fetchPort.toInt, replicatePort.toInt)
+    val Array(host, rpcPort, pushPort, fetchPort, replicatePort, topology) = id.split(":")
+    new WorkerInfo(
+      host,
+      rpcPort.toInt,
+      pushPort.toInt,
+      fetchPort.toInt,
+      replicatePort.toInt,
+      topology)
   }
 }

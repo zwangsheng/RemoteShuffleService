@@ -337,7 +337,7 @@ private[celeborn] class Master(
         .toMap.asJava
       val userResourceConsumption =
         PbSerDeUtils.fromPbUserResourceConsumption(pbRegisterWorker.getUserResourceConsumptionMap)
-
+      val topology = pbRegisterWorker.getTopology
       logDebug(s"Received RegisterWorker request $requestId, $host:$pushPort:$replicatePort" +
         s" $disks.")
       executeWithLeaderChecker(
@@ -351,6 +351,7 @@ private[celeborn] class Master(
           replicatePort,
           disks,
           userResourceConsumption,
+          topology,
           requestId))
 
     case ReleaseSlots(_, _, _, _, _) =>
@@ -605,6 +606,7 @@ private[celeborn] class Master(
       replicatePort: Int,
       disks: util.Map[String, DiskInfo],
       userResourceConsumption: util.Map[UserIdentifier, ResourceConsumption],
+      topology: String,
       requestId: String): Unit = {
     val workerToRegister =
       new WorkerInfo(
@@ -614,7 +616,8 @@ private[celeborn] class Master(
         fetchPort,
         replicatePort,
         disks,
-        userResourceConsumption)
+        userResourceConsumption,
+        topology)
     if (workersSnapShot.contains(workerToRegister)) {
       logWarning(s"Receive RegisterWorker while worker" +
         s" ${workerToRegister.toString()} already exists, re-register.")
@@ -629,6 +632,7 @@ private[celeborn] class Master(
         replicatePort,
         disks,
         userResourceConsumption,
+        topology,
         newRequestId)
       context.reply(RegisterWorkerResponse(true, "Worker in snapshot, re-register."))
     } else if (statusSystem.workerLostEvents.contains(workerToRegister)) {
@@ -643,6 +647,7 @@ private[celeborn] class Master(
         replicatePort,
         disks,
         userResourceConsumption,
+        topology,
         requestId)
       context.reply(RegisterWorkerResponse(true, "Worker in workerLostEvents, re-register."))
     } else {
@@ -654,6 +659,7 @@ private[celeborn] class Master(
         replicatePort,
         disks,
         userResourceConsumption,
+        topology,
         requestId)
       logInfo(s"Registered worker $workerToRegister.")
       context.reply(RegisterWorkerResponse(true, ""))

@@ -117,6 +117,8 @@ public class ShuffleClientImpl extends ShuffleClient {
   private final Map<Integer, Set<Integer>> splitting = JavaUtils.newConcurrentHashMap();
 
   protected final String appUniqueId;
+  private final String topology;
+  private final String bindAddress;
 
   private final ThreadLocal<Compressor> compressorThreadLocal =
       new ThreadLocal<Compressor>() {
@@ -200,8 +202,12 @@ public class ShuffleClientImpl extends ShuffleClient {
       pushDataTimeout = conf.pushDataTimeoutMs();
     }
 
+    this.bindAddress = Utils.localHostName(conf);
+    this.topology =
+        Optional.ofNullable(System.getenv("KUBERNETES_NODE_NAME")).orElse(this.bindAddress);
+
     // init rpc env
-    rpcEnv = RpcEnv.create(RpcNameConstants.SHUFFLE_CLIENT_SYS, Utils.localHostName(conf), 0, conf);
+    rpcEnv = RpcEnv.create(RpcNameConstants.SHUFFLE_CLIENT_SYS, this.bindAddress, 0, conf);
 
     String module = TransportModuleConstants.DATA_MODULE;
     TransportConf dataTransportConf =
@@ -1724,6 +1730,10 @@ public class ShuffleClientImpl extends ShuffleClient {
       partitionSplitPool.shutdown();
     }
     if (null != lifecycleManagerRef) {
+      logger.info(
+          "Unregister shuffle client({}, {}) from lifecycle manager.", topology, bindAddress);
+      // ignore the result
+      lifecycleManagerRef.send(UnRegisterShuffleClient$.MODULE$.apply(topology, bindAddress));
       lifecycleManagerRef = null;
     }
 
@@ -1737,6 +1747,10 @@ public class ShuffleClientImpl extends ShuffleClient {
   public void setupLifecycleManagerRef(String host, int port) {
     lifecycleManagerRef =
         rpcEnv.setupEndpointRef(new RpcAddress(host, port), RpcNameConstants.LIFECYCLE_MANAGER_EP);
+
+    // add retry here
+    logger.info("Register shuffle client({}, {}) to lifecycle manager.", topology, bindAddress);
+    lifecycleManagerRef.send(RegisterShuffleClient$.MODULE$.apply(topology, bindAddress));
   }
 
   @Override

@@ -236,7 +236,8 @@ object PbSerDeUtils {
       mode,
       null,
       StorageInfo.fromPb(pbLoc.getStorageInfo),
-      Utils.byteStringToRoaringBitmap(pbLoc.getMapIdBitmap))
+      Utils.byteStringToRoaringBitmap(pbLoc.getMapIdBitmap),
+      pbLoc.getTopology)
     if (pbLoc.hasPeer) {
       val peerPb = pbLoc.getPeer
       var peerMode = Mode.PRIMARY
@@ -252,7 +253,8 @@ object PbSerDeUtils {
         peerMode,
         partitionLocation,
         StorageInfo.fromPb(peerPb.getStorageInfo),
-        Utils.byteStringToRoaringBitmap(peerPb.getMapIdBitmap))
+        Utils.byteStringToRoaringBitmap(peerPb.getMapIdBitmap),
+        pbLoc.getTopology)
       partitionLocation.setPeer(peerLocation)
     }
     partitionLocation
@@ -300,10 +302,8 @@ object PbSerDeUtils {
   def fromPbWorkerResource(pbWorkerResource: util.Map[String, PbWorkerResource]): WorkerResource = {
     val slots = new WorkerResource()
     pbWorkerResource.asScala.foreach { case (uniqueId, pbWorkerResource) =>
-      val Array(host, rpcPort, pushPort, fetchPort, replicatePort) = uniqueId.split(":")
+      val workerInfo = WorkerInfo.fromUniqueId(uniqueId)
       val networkLocation = pbWorkerResource.getNetworkLocation
-      val workerInfo =
-        new WorkerInfo(host, rpcPort.toInt, pushPort.toInt, fetchPort.toInt, replicatePort.toInt)
       workerInfo.networkLocation = networkLocation
       val primaryPartitionLocation = new util.ArrayList[PartitionLocation](pbWorkerResource
         .getPrimaryPartitionsList.asScala.map(PbSerDeUtils.fromPbPartitionLocation).asJava)

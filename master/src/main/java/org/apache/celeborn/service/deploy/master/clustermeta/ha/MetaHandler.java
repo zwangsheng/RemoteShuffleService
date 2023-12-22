@@ -97,6 +97,7 @@ public class MetaHandler {
       int replicatePort;
       Map<String, DiskInfo> diskInfos;
       Map<UserIdentifier, ResourceConsumption> userResourceConsumption;
+      String topology;
       List<Map<String, Integer>> slots = new ArrayList<>();
       Map<String, Long> estimatedAppDiskUsage = new HashMap<>();
       switch (cmdType) {
@@ -208,6 +209,7 @@ public class MetaHandler {
           userResourceConsumption =
               MetaUtil.fromPbUserResourceConsumption(
                   request.getRegisterWorkerRequest().getUserResourceConsumptionMap());
+          topology = request.getRegisterWorkerRequest().getTopology();
           LOG.debug(
               "Handle worker register for {} {} {} {} {} {} {}",
               host,
@@ -224,7 +226,8 @@ public class MetaHandler {
               fetchPort,
               replicatePort,
               diskInfos,
-              userResourceConsumption);
+              userResourceConsumption,
+              topology);
           break;
 
         case ReportWorkerUnavailable:

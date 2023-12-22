@@ -175,6 +175,8 @@ abstract class CommitHandler(
    */
   def handleGetReducerFileGroup(context: RpcCallContext, shuffleId: Int): Unit
 
+  def handleGetPartitionLocation(shuffleId: Int, partitionId: Int): Seq[String]
+
   def removeExpiredShuffle(shuffleId: Int): Unit = {
     reducerFileGroupsMap.remove(shuffleId)
   }

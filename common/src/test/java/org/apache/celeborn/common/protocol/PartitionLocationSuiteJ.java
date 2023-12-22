@@ -201,7 +201,8 @@ public class PartitionLocationSuiteJ {
             mode,
             peer,
             storageInfo,
-            bitmap);
+            bitmap,
+            "topology3");
 
     String exp1 =
         "PartitionLocation[\n"
@@ -210,7 +211,9 @@ public class PartitionLocationSuiteJ {
             + "  mode:PRIMARY\n"
             + "  peer:(empty)\n"
             + "  storage hint:StorageInfo{type=MEMORY, mountPoint='', finalResult=false, filePath=null}\n"
-            + "  mapIdBitMap:{}]";
+            + "  mapIdBitMap:{}\n"
+            + "  topology:localhost]";
+
     String exp2 =
         "PartitionLocation[\n"
             + "  id-epoch:0-0\n"
@@ -218,7 +221,9 @@ public class PartitionLocationSuiteJ {
             + "  mode:PRIMARY\n"
             + "  peer:(host-rpcPort-pushPort-fetchPort-replicatePort:localhost-3-1-2-4)\n"
             + "  storage hint:StorageInfo{type=MEMORY, mountPoint='', finalResult=false, filePath=null}\n"
-            + "  mapIdBitMap:{}]";
+            + "  mapIdBitMap:{}\n"
+            + "  topology:localhost]";
+
     String exp3 =
         "PartitionLocation[\n"
             + "  id-epoch:1000-0\n"
@@ -226,7 +231,8 @@ public class PartitionLocationSuiteJ {
             + "  mode:PRIMARY\n"
             + "  peer:(host-rpcPort-pushPort-fetchPort-replicatePort:localhost-3-1-2-4)\n"
             + "  storage hint:StorageInfo{type=MEMORY, mountPoint='/mnt/disk/0', finalResult=false, filePath=null}\n"
-            + "  mapIdBitMap:{1,2,3}]";
+            + "  mapIdBitMap:{1,2,3}\n"
+            + "  topology:topology3]";
     assertEquals(exp1, location1.toString());
     assertEquals(exp2, location2.toString());
     assertEquals(exp3, location3.toString());

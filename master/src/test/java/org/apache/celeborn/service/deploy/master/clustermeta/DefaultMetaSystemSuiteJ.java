@@ -144,6 +144,35 @@ public class DefaultMetaSystemSuiteJ {
   }
 
   @Test
+  public void testHandleRegisterWorkerWithTopology() {
+    statusSystem.handleRegisterWorker(
+        HOSTNAME1,
+        RPCPORT1,
+        PUSHPORT1,
+        FETCHPORT1,
+        REPLICATEPORT1,
+        disks1,
+        userResourceConsumption1,
+        getNewReqeustId());
+    statusSystem.handleRegisterWorker(
+        HOSTNAME2,
+        RPCPORT2,
+        PUSHPORT2,
+        FETCHPORT2,
+        REPLICATEPORT2,
+        disks2,
+        userResourceConsumption2,
+        "topology",
+        getNewReqeustId());
+
+    assertEquals(2, statusSystem.workers.size());
+    statusSystem.workers.forEach(
+        worker ->
+            assertTrue(
+                HOSTNAME1.equals(worker.topology()) || "topology".equals(worker.topology())));
+  }
+
+  @Test
   public void testHandleWorkerExclude() {
     WorkerInfo workerInfo1 =
         new WorkerInfo(

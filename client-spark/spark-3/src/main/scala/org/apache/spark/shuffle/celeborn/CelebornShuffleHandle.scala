@@ -17,10 +17,12 @@
 
 package org.apache.spark.shuffle.celeborn
 
+import org.apache.spark.MapOutputTrackerMaster
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.shuffle.BaseShuffleHandle
 
 import org.apache.celeborn.common.identity.UserIdentifier
+import org.apache.celeborn.common.rpc.RpcEndpointRef
 
 class CelebornShuffleHandle[K, V, C](
     val appUniqueId: String,
@@ -31,7 +33,8 @@ class CelebornShuffleHandle[K, V, C](
     val throwsFetchFailure: Boolean,
     val numMappers: Int,
     dependency: ShuffleDependency[K, V, C],
-    val ioCryptoInitializationVector: Array[Byte])
+    val ioCryptoInitializationVector: Array[Byte],
+    @transient val lifecycleManagerRef: RpcEndpointRef)
   extends BaseShuffleHandle(shuffleId, dependency) {
   def this(
       appUniqueId: String,
@@ -50,5 +53,25 @@ class CelebornShuffleHandle[K, V, C](
     throwsFetchFailure,
     numMappers,
     dependency,
+    null,
     null)
+
+  // be called by Spark MapOutputTrackerMaster
+  def getLocationsWithLargestOutputs(
+      tracker: MapOutputTrackerMaster,
+      dep: ShuffleDependency[_, _, _],
+      partitionId: Int): Seq[String] = {
+    if (lifecycleManagerRef == null) {
+      return Seq.empty
+    }
+    try {
+      val res = lifecycleManagerRef.askSync[GetPartitionLocationResponse](GetPartitionLocation(
+        shuffleId,
+        partitionId))
+      res.hosts
+    } catch {
+      case _: Exception =>
+        Seq.empty
+    }
+  }
 }

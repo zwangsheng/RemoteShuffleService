@@ -63,6 +63,7 @@ public class PartitionLocation implements Serializable {
   private PartitionLocation peer;
   private StorageInfo storageInfo;
   private RoaringBitmap mapIdBitMap;
+  private String topology;
   private transient String _hostPushPort;
   private transient String _hostFetchPort;
 
@@ -78,6 +79,7 @@ public class PartitionLocation implements Serializable {
     this.peer = loc.peer;
     this.storageInfo = loc.storageInfo;
     this.mapIdBitMap = loc.mapIdBitMap;
+    this.topology = loc.topology;
     this._hostPushPort = host + ":" + pushPort;
     this._hostFetchPort = host + ":" + fetchPort;
   }
@@ -102,7 +104,8 @@ public class PartitionLocation implements Serializable {
         mode,
         null,
         new StorageInfo(),
-        new RoaringBitmap());
+        new RoaringBitmap(),
+        host);
   }
 
   public PartitionLocation(
@@ -126,7 +129,8 @@ public class PartitionLocation implements Serializable {
         mode,
         peer,
         new StorageInfo(),
-        new RoaringBitmap());
+        new RoaringBitmap(),
+        host);
   }
 
   public PartitionLocation(
@@ -140,7 +144,8 @@ public class PartitionLocation implements Serializable {
       Mode mode,
       PartitionLocation peer,
       StorageInfo hint,
-      RoaringBitmap mapIdBitMap) {
+      RoaringBitmap mapIdBitMap,
+      String topology) {
     this.id = id;
     this.epoch = epoch;
     this.host = host;
@@ -152,6 +157,8 @@ public class PartitionLocation implements Serializable {
     this.peer = peer;
     this.storageInfo = hint;
     this.mapIdBitMap = mapIdBitMap;
+    // Default set partitionLocation topology to host
+    this.topology = topology;
     this._hostPushPort = host + ":" + pushPort;
     this._hostFetchPort = host + ":" + fetchPort;
   }
@@ -318,6 +325,8 @@ public class PartitionLocation implements Serializable {
         + storageInfo
         + "\n  mapIdBitMap:"
         + mapIdBitMap
+        + "\n  topology:"
+        + topology
         + "]";
   }
 
@@ -331,5 +340,13 @@ public class PartitionLocation implements Serializable {
 
   public void setMapIdBitMap(RoaringBitmap mapIdBitMap) {
     this.mapIdBitMap = mapIdBitMap;
+  }
+
+  public String getTopology() {
+    return topology;
+  }
+
+  public void setTopology(String topology) {
+    this.topology = topology;
   }
 }

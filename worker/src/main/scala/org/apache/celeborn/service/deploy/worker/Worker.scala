@@ -78,6 +78,9 @@ private[celeborn] class Worker(
   private val rpcPort = rpcEnv.address.port
   Utils.checkHost(host)
 
+  // TODO we should add other load topology
+  private val topology = Option(System.getenv("CELEBORN_WORKER_NODE_IP")).getOrElse(host)
+
   private val WORKER_SHUTDOWN_PRIORITY = 100
   val shutdown = new AtomicBoolean(false)
   private val gracefulShutdown = conf.workerGracefulShutdown
@@ -226,7 +229,8 @@ private[celeborn] class Worker(
       fetchPort,
       replicatePort,
       diskInfos,
-      userResourceConsumption)
+      userResourceConsumption,
+      topology)
 
   // whether this Worker registered to Master successfully
   val registered = new AtomicBoolean(false)
@@ -504,6 +508,7 @@ private[celeborn] class Worker(
               // StorageManager have update the disk info.
               workerInfo.diskInfos.asScala.toMap,
               handleResourceConsumption().asScala.toMap,
+              topology,
               MasterClient.genRequestId()),
             classOf[PbRegisterWorkerResponse])
         } catch {

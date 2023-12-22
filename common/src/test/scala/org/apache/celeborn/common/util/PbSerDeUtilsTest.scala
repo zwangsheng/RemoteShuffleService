@@ -96,7 +96,8 @@ class PbSerDeUtilsTest extends CelebornFunSuite {
         false,
         "filePath",
         StorageInfo.LOCAL_DISK_MASK),
-      null)
+      null,
+      "topology1")
 
   val workerResource = new WorkerResource()
   workerResource.put(
