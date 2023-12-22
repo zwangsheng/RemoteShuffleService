@@ -22,8 +22,8 @@ import org.apache.spark.ShuffleDependency
 import org.apache.spark.shuffle.BaseShuffleHandle
 
 import org.apache.celeborn.common.identity.UserIdentifier
+import org.apache.celeborn.common.protocol.message.ControlMessages.{GetPartitionLocation, GetPartitionLocationResponse}
 import org.apache.celeborn.common.rpc.RpcEndpointRef
-
 class CelebornShuffleHandle[K, V, C](
     val appUniqueId: String,
     val lifecycleManagerHost: String,
