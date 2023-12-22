@@ -327,7 +327,7 @@ class ReducePartitionCommitHandler(
     if (locSet == null) {
       return Seq.empty
     }
-    val hosts = locSet.asScala.map(loc => loc.getNode).toSeq
+    val hosts = locSet.asScala.map(loc => loc.getTopology).toSeq
     logInfo(s"Reply GetPartitionLocation($shuffleId, $partitionId) with $hosts")
     hosts
   }
