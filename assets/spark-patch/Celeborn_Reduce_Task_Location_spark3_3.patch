@@ -1,0 +1,105 @@
+diff --git a/core/src/main/scala/org/apache/spark/MapOutputTracker.scala b/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
+index 893a884daca..2a9903474a6 100644
+--- a/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
++++ b/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
+@@ -1028,24 +1028,19 @@ private[spark] class MapOutputTrackerMaster(
+       if (preferredLoc.nonEmpty) {
+         preferredLoc
+       } else {
+-        if (shuffleLocalityEnabled && dep.rdd.partitions.length < SHUFFLE_PREF_MAP_THRESHOLD &&
+-          dep.partitioner.numPartitions < SHUFFLE_PREF_REDUCE_THRESHOLD) {
+-          val blockManagerIds = getLocationsWithLargestOutputs(dep.shuffleId, partitionId,
+-            dep.partitioner.numPartitions, REDUCER_PREF_LOCS_FRACTION)
+-          if (blockManagerIds.nonEmpty) {
+-            blockManagerIds.get.map(_.host)
+-          } else {
+-            Nil
+-          }
+-        } else {
+-          Nil
+-        }
++        // allow custom shuffle manager to specify locations of preferred locations
++        dep.shuffleHandle.getReduceTaskPreferLocation(this, dep, partitionId)
+       }
+     } else {
+       Nil
+     }
+   }
+ 
++  def shouldGetLocationsWithLargestOutputs(mapTaskNum: Int, reduceTaskNum: Int): Boolean = {
++    shuffleLocalityEnabled && mapTaskNum < SHUFFLE_PREF_MAP_THRESHOLD &&
++       reduceTaskNum < SHUFFLE_PREF_REDUCE_THRESHOLD
++  }
++
+   /**
+    * Return a list of locations that each have fraction of map output greater than the specified
+    * threshold.
+@@ -1060,7 +1055,7 @@ private[spark] class MapOutputTrackerMaster(
+       shuffleId: Int,
+       reducerId: Int,
+       numReducers: Int,
+-      fractionThreshold: Double)
++      fractionThreshold: Double = REDUCER_PREF_LOCS_FRACTION)
+     : Option[Array[BlockManagerId]] = {
+ 
+     val shuffleStatus = shuffleStatuses.get(shuffleId).orNull
+diff --git a/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala b/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
+index 6fe183c0780..97776d2fd9a 100644
+--- a/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
++++ b/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
+@@ -17,6 +17,7 @@
+ 
+ package org.apache.spark.shuffle
+ 
++import org.apache.spark.MapOutputTrackerMaster
+ import org.apache.spark.ShuffleDependency
+ 
+ /**
+@@ -25,4 +26,22 @@ import org.apache.spark.ShuffleDependency
+ private[spark] class BaseShuffleHandle[K, V, C](
+     shuffleId: Int,
+     val dependency: ShuffleDependency[K, V, C])
+-  extends ShuffleHandle(shuffleId)
++  extends ShuffleHandle(shuffleId) {
++
++  def getReduceTaskPreferLocation(
++      tracker: MapOutputTrackerMaster,
++      dep: ShuffleDependency[_, _, _],
++      partitionId: Int): Seq[String] = {
++    if (tracker.shouldGetLocationsWithLargestOutputs(dep.rdd.partitions.length,
++      dep.partitioner.numPartitions)) {
++      val blockManagerIds = tracker.getLocationsWithLargestOutputs(
++        dep.shuffleId,
++        partitionId,
++        dep.partitioner.numPartitions)
++      if (blockManagerIds.nonEmpty) {
++        return blockManagerIds.get.map(_.host)
++      }
++    }
++    Nil
++  }
++}
+diff --git a/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala b/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
+index e04c97fe618..0d464bde780 100644
+--- a/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
++++ b/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
+@@ -17,6 +17,7 @@
+ 
+ package org.apache.spark.shuffle
+ 
++import org.apache.spark.{MapOutputTrackerMaster, ShuffleDependency}
+ import org.apache.spark.annotation.DeveloperApi
+ 
+ /**
+@@ -25,4 +26,10 @@ import org.apache.spark.annotation.DeveloperApi
+  * @param shuffleId ID of the shuffle
+  */
+ @DeveloperApi
+-abstract class ShuffleHandle(val shuffleId: Int) extends Serializable {}
++abstract class ShuffleHandle(val shuffleId: Int) extends Serializable {
++
++  def getReduceTaskPreferLocation(
++      tracker: MapOutputTrackerMaster,
++      dep: ShuffleDependency[_, _, _],
++      partitionId: Int): Seq[String]
++}
