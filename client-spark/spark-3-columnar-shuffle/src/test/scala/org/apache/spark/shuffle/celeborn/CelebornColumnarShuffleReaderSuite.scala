@@ -82,7 +82,6 @@ class CelebornColumnarShuffleReaderSuite {
           0,
           false,
           10,
-          null,
           null),
         0,
         10,
