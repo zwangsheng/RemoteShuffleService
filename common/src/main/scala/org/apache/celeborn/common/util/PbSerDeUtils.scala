@@ -197,7 +197,8 @@ object PbSerDeUtils {
       pbWorkerInfo.getFetchPort,
       pbWorkerInfo.getReplicatePort,
       disks,
-      userResourceConsumption)
+      userResourceConsumption,
+      pbWorkerInfo.getTopology)
   }
 
   def toPbWorkerInfo(
@@ -213,6 +214,7 @@ object PbSerDeUtils {
       .setPushPort(workerInfo.pushPort)
       .setReplicatePort(workerInfo.replicatePort)
       .addAllDisks(pbDiskInfos)
+      .setTopology(workerInfo.topology)
     if (!eliminateUserResourceConsumption) {
       builder.putAllUserResourceConsumption(
         PbSerDeUtils.toPbUserResourceConsumption(workerInfo.userResourceConsumption))
@@ -277,6 +279,7 @@ object PbSerDeUtils {
       .setReplicatePort(location.getReplicatePort)
       .setStorageInfo(StorageInfo.toPb(location.getStorageInfo))
       .setMapIdBitmap(Utils.roaringBitmapToByteString(location.getMapIdBitMap))
+      .setTopology(location.getTopology)
     if (location.hasPeer) {
       val peerBuilder = PbPartitionLocation.newBuilder
       if (location.getPeer.getMode eq Mode.PRIMARY) {
