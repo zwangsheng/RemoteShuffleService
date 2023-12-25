@@ -50,12 +50,12 @@ trait WithShuffleClientSuite extends CelebornFunSuite {
   }
 
   override protected def afterEach() {
-    if (lifecycleManager != null) {
-      lifecycleManager.stop()
-    }
-
+    // in order to shutdown shuffle client first
     if (shuffleClient != null) {
       shuffleClient.shutdown()
+    }
+    if (lifecycleManager != null) {
+      lifecycleManager.stop()
     }
   }
 
