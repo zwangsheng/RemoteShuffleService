@@ -79,7 +79,7 @@ private[celeborn] class Worker(
   Utils.checkHost(host)
 
   // TODO we should add other load topology
-  private val topology = Option(System.getenv("CELEBORN_WORKER_NODE_IP")).getOrElse(host)
+  private val topology = Option(System.getenv("KUBERNETES_NODE_NAME")).getOrElse(host)
 
   private val WORKER_SHUTDOWN_PRIORITY = 100
   val shutdown = new AtomicBoolean(false)

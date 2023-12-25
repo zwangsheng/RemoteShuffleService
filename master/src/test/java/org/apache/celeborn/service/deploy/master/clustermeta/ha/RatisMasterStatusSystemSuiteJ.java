@@ -302,8 +302,8 @@ public class RatisMasterStatusSystemSuiteJ {
         REPLICATEPORT2,
         disks2,
         userResourceConsumption2,
-        getNewReqeustId(),
-        "topology");
+        "topology",
+        getNewReqeustId());
 
     Thread.sleep(3000L);
 
