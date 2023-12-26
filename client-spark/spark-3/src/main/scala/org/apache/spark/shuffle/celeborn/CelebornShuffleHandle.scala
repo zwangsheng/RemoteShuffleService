@@ -74,4 +74,19 @@ class CelebornShuffleHandle[K, V, C](
         Seq.empty
     }
   }
+
+  def getMapLocation(
+      tracker: MapOutputTrackerMaster,
+      dep: ShuffleDependency[_, _, _],
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int): Seq[String] = {
+    // endPartition - startPartition != 1 means enabled AQE local shuffle read
+    if (endPartition - startPartition != 1) {
+      SparkUtils.printRecommendDisableAQELocalShuffleRead()
+      return Seq.empty
+    }
+    getLocationsWithLargestOutputs(tracker, dep, startPartition)
+  }
 }

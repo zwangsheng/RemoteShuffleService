@@ -1,8 +1,8 @@
 diff --git a/core/src/main/scala/org/apache/spark/MapOutputTracker.scala b/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
-index 893a884daca..2a9903474a6 100644
+index b1974948430..57deb2f1f7e 100644
 --- a/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
 +++ b/core/src/main/scala/org/apache/spark/MapOutputTracker.scala
-@@ -1028,24 +1028,19 @@ private[spark] class MapOutputTrackerMaster(
+@@ -1026,24 +1026,19 @@ private[spark] class MapOutputTrackerMaster(
        if (preferredLoc.nonEmpty) {
          preferredLoc
        } else {
@@ -34,7 +34,7 @@ index 893a884daca..2a9903474a6 100644
    /**
     * Return a list of locations that each have fraction of map output greater than the specified
     * threshold.
-@@ -1060,7 +1055,7 @@ private[spark] class MapOutputTrackerMaster(
+@@ -1058,7 +1053,7 @@ private[spark] class MapOutputTrackerMaster(
        shuffleId: Int,
        reducerId: Int,
        numReducers: Int,
@@ -43,8 +43,30 @@ index 893a884daca..2a9903474a6 100644
      : Option[Array[BlockManagerId]] = {
  
      val shuffleStatus = shuffleStatuses.get(shuffleId).orNull
+@@ -1127,6 +1122,21 @@ private[spark] class MapOutputTrackerMaster(
+     }
+   }
+ 
++  def getMapLocation(
++      dep: ShuffleDependency[_, _, _],
++      startMapIndex: Int,
++      endMapIndex: Int,
++      startPartition: Int,
++      endPartition: Int): Seq[String] =
++  {
++    dep.shuffleHandle.getMapLocation(this,
++      dep,
++      startMapIndex,
++      endMapIndex,
++      startPartition,
++      endPartition)
++  }
++
+   def incrementEpoch(): Unit = {
+     epochLock.synchronized {
+       epoch += 1
 diff --git a/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala b/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
-index 6fe183c0780..97776d2fd9a 100644
+index 6fe183c0780..c01ad45bd55 100644
 --- a/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
 +++ b/core/src/main/scala/org/apache/spark/shuffle/BaseShuffleHandle.scala
 @@ -17,6 +17,7 @@
@@ -55,19 +77,20 @@ index 6fe183c0780..97776d2fd9a 100644
  import org.apache.spark.ShuffleDependency
  
  /**
-@@ -25,4 +26,22 @@ import org.apache.spark.ShuffleDependency
+@@ -25,4 +26,33 @@ import org.apache.spark.ShuffleDependency
  private[spark] class BaseShuffleHandle[K, V, C](
      shuffleId: Int,
      val dependency: ShuffleDependency[K, V, C])
 -  extends ShuffleHandle(shuffleId)
-+  extends ShuffleHandle(shuffleId) {
++    extends ShuffleHandle(shuffleId) {
 +
 +  def getReduceTaskPreferLocation(
 +      tracker: MapOutputTrackerMaster,
 +      dep: ShuffleDependency[_, _, _],
 +      partitionId: Int): Seq[String] = {
-+    if (tracker.shouldGetLocationsWithLargestOutputs(dep.rdd.partitions.length,
-+      dep.partitioner.numPartitions)) {
++    if (tracker.shouldGetLocationsWithLargestOutputs(
++          dep.rdd.partitions.length,
++          dep.partitioner.numPartitions)) {
 +      val blockManagerIds = tracker.getLocationsWithLargestOutputs(
 +        dep.shuffleId,
 +        partitionId,
@@ -78,9 +101,19 @@ index 6fe183c0780..97776d2fd9a 100644
 +    }
 +    Nil
 +  }
++
++  override def getMapLocation(
++      tracker: MapOutputTrackerMaster,
++      dep: ShuffleDependency[_, _, _],
++      startMapIndex: Int,
++      endMapIndex: Int,
++      startPartition: Int,
++      endPartition: Int): Seq[String] = {
++    tracker.getMapLocation(dep, startMapIndex, endMapIndex)
++  }
 +}
 diff --git a/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala b/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
-index e04c97fe618..0d464bde780 100644
+index e04c97fe618..bcc308a1547 100644
 --- a/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
 +++ b/core/src/main/scala/org/apache/spark/shuffle/ShuffleHandle.scala
 @@ -17,6 +17,7 @@
@@ -91,7 +124,7 @@ index e04c97fe618..0d464bde780 100644
  import org.apache.spark.annotation.DeveloperApi
  
  /**
-@@ -25,4 +26,10 @@ import org.apache.spark.annotation.DeveloperApi
+@@ -25,4 +26,18 @@ import org.apache.spark.annotation.DeveloperApi
   * @param shuffleId ID of the shuffle
   */
  @DeveloperApi
@@ -102,4 +135,44 @@ index e04c97fe618..0d464bde780 100644
 +      tracker: MapOutputTrackerMaster,
 +      dep: ShuffleDependency[_, _, _],
 +      partitionId: Int): Seq[String]
++
++  def getMapLocation(
++      tracker: MapOutputTrackerMaster,
++      dep: ShuffleDependency[_, _, _],
++      startMapIndex: Int,
++      endMapIndex: Int,
++      startPartition: Int,
++      endPartition: Int): Seq[String]
 +}
+diff --git a/sql/core/src/main/scala/org/apache/spark/sql/execution/ShuffledRowRDD.scala b/sql/core/src/main/scala/org/apache/spark/sql/execution/ShuffledRowRDD.scala
+index 47d61196fe8..b271ba14d77 100644
+--- a/sql/core/src/main/scala/org/apache/spark/sql/execution/ShuffledRowRDD.scala
++++ b/sql/core/src/main/scala/org/apache/spark/sql/execution/ShuffledRowRDD.scala
+@@ -182,14 +182,22 @@ class ShuffledRowRDD(
+           tracker.getPreferredLocationsForShuffle(dependency, reducerIndex)
+         }
+ 
+-      case PartialReducerPartitionSpec(_, startMapIndex, endMapIndex, _) =>
+-        tracker.getMapLocation(dependency, startMapIndex, endMapIndex)
++      case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex, _) =>
++        tracker.getMapLocation(dependency,
++          startMapIndex,
++          endMapIndex,
++          reducerIndex,
++          reducerIndex + 1)
+ 
+-      case PartialMapperPartitionSpec(mapIndex, _, _) =>
+-        tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
++      case PartialMapperPartitionSpec(mapIndex, startReducerIndex, endReducerIndex) =>
++        tracker.getMapLocation(dependency,
++          mapIndex,
++          mapIndex + 1,
++          startReducerIndex,
++          endReducerIndex)
+ 
+       case CoalescedMapperPartitionSpec(startMapIndex, endMapIndex, numReducers) =>
+-        tracker.getMapLocation(dependency, startMapIndex, endMapIndex)
++        tracker.getMapLocation(dependency, startMapIndex, endMapIndex, 0, numReducers)
+     }
+   }
+ 
